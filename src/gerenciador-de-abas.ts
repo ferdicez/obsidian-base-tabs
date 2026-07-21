@@ -1,6 +1,6 @@
 import type { App, TFile } from "obsidian";
 import { BarraDeAbas } from "./barra-de-abas";
-import type { DadosBaseTabs } from "./dados";
+import type { DadosBaseTabs, ModoExibicao } from "./dados";
 import { preencherCacheBase } from "./leitor-base";
 
 /**
@@ -17,7 +17,8 @@ export class GerenciadorDeAbas {
 	constructor(
 		private app: App,
 		private getDados: () => DadosBaseTabs,
-		private escolherIcone: (caminhoBase: string | null, nomeView: string) => void
+		private escolherIcone: (caminhoBase: string | null, nomeView: string) => void,
+		private definirModo: (caminhoBase: string | null, nomeView: string, modo: ModoExibicao) => void
 	) {}
 
 	iniciar(): void {
@@ -55,6 +56,7 @@ export class GerenciadorDeAbas {
 				barra = new BarraDeAbas(this.app, baseEl, dados, {
 					caminhoBase: () => this.caminhoDaBase(baseEl),
 					escolherIcone: this.escolherIcone,
+					definirModo: this.definirModo,
 				});
 				this.barras.set(baseEl, barra);
 			}

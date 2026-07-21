@@ -5,7 +5,7 @@ import {
 	type MarkdownPostProcessorContext,
 } from "obsidian";
 import { BarraDeAbas } from "../barra-de-abas";
-import type { DadosBaseTabs } from "../dados";
+import type { DadosBaseTabs, ModoExibicao } from "../dados";
 import { preencherCacheBase } from "../leitor-base";
 
 /** Config parseada de um bloco ```base-tabs. */
@@ -27,6 +27,7 @@ export class ProcessadorBaseTabs {
 		private app: App,
 		private getDados: () => DadosBaseTabs,
 		private escolherIcone: (caminhoBase: string | null, nomeView: string) => void,
+		private definirModo: (caminhoBase: string | null, nomeView: string, modo: ModoExibicao) => void,
 		/** registra um ouvinte de re-render (ex.: troca de ícone) e devolve a função para removê-lo. */
 		private registrarOuvinteReescan: (ouvinte: () => void) => () => void
 	) {}
@@ -46,6 +47,7 @@ export class ProcessadorBaseTabs {
 			cfg.views,
 			this.getDados,
 			this.escolherIcone,
+			this.definirModo,
 			ctx.sourcePath,
 			this.registrarOuvinteReescan
 		);
@@ -70,6 +72,7 @@ class EmbedCurado extends MarkdownRenderChild {
 		private views: string[],
 		private getDados: () => DadosBaseTabs,
 		private escolherIcone: (caminhoBase: string | null, nomeView: string) => void,
+		private definirModo: (caminhoBase: string | null, nomeView: string, modo: ModoExibicao) => void,
 		private sourcePath: string,
 		private registrarOuvinteReescan: (ouvinte: () => void) => () => void
 	) {
@@ -104,6 +107,7 @@ class EmbedCurado extends MarkdownRenderChild {
 			this.barra = new BarraDeAbas(this.appRef, baseEl, this.getDados(), {
 				caminhoBase: () => this.caminhoBase,
 				escolherIcone: this.escolherIcone,
+				definirModo: this.definirModo,
 				filtrarViews: () => this.views,
 			});
 		}

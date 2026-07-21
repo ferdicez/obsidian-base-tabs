@@ -1,5 +1,5 @@
 import { Plugin } from "obsidian";
-import { carregarDados, chaveDaView, iconeDaView, salvarDados, type DadosBaseTabs } from "./dados";
+import { carregarDados, chaveDaView, iconeDaView, salvarDados, type DadosBaseTabs, type ModoExibicao } from "./dados";
 import { ProcessadorBaseTabs } from "./codeblock/processador";
 import { GerenciadorDeAbas } from "./gerenciador-de-abas";
 import { ModalEscolherIcone } from "./modal-escolher-icone";
@@ -22,7 +22,8 @@ export default class BaseTabsPlugin extends Plugin {
 		this.gerenciador = new GerenciadorDeAbas(
 			this.app,
 			() => this.dados,
-			(caminhoBase, nomeView) => this.abrirEscolhaDeIcone(caminhoBase, nomeView)
+			(caminhoBase, nomeView) => this.abrirEscolhaDeIcone(caminhoBase, nomeView),
+			(caminhoBase, nomeView, modo) => this.definirModo(caminhoBase, nomeView, modo)
 		);
 
 		// Fase 2: bloco ```base-tabs (embed curado por página).
@@ -30,6 +31,7 @@ export default class BaseTabsPlugin extends Plugin {
 			this.app,
 			() => this.dados,
 			(caminhoBase, nomeView) => this.abrirEscolhaDeIcone(caminhoBase, nomeView),
+			(caminhoBase, nomeView, modo) => this.definirModo(caminhoBase, nomeView, modo),
 			(ouvinte) => this.registrarOuvinteReescan(ouvinte)
 		);
 		this.registerMarkdownCodeBlockProcessor(LINGUAGEM_BLOCO, (src, el, ctx) =>
@@ -76,5 +78,14 @@ export default class BaseTabsPlugin extends Plugin {
 			await this.salvar();
 			this.reescanearTudo();
 		}).open();
+	}
+
+	/** Define o modo de exibição da aba (ícone+nome / só ícone / só nome) e persiste. */
+	private async definirModo(caminhoBase: string | null, nomeView: string, modo: ModoExibicao): Promise<void> {
+		const chave = chaveDaView(caminhoBase, nomeView);
+		if (modo === "ambos") delete this.dados.exibicaoPorView[chave]; // padrão: não precisa guardar.
+		else this.dados.exibicaoPorView[chave] = modo;
+		await this.salvar();
+		this.reescanearTudo();
 	}
 }

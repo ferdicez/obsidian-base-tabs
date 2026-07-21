@@ -7,7 +7,7 @@
 .base-tabs-barra {
 	display: flex;
 	align-items: center;
-	gap: var(--size-4-2, 8px);
+	gap: var(--size-4-1, 4px);
 	flex-wrap: nowrap;
 	min-width: 0;
 	max-width: 100%;

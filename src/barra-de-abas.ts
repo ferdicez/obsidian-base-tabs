@@ -1,5 +1,5 @@
 import { Menu, setIcon } from "obsidian";
-import { iconeDaView, type DadosBaseTabs } from "./dados";
+import { iconeDaView, modoDaView, type DadosBaseTabs, type ModoExibicao } from "./dados";
 import { lerViewsDoArquivo, type ViewDoArquivo } from "./leitor-base";
 import { adicionarView, encontrarToolbar, nomeViewAtiva, trocarPara } from "./seletor-nativo";
 import type { App } from "obsidian";
@@ -20,6 +20,8 @@ export interface CallbacksBarra {
 	caminhoBase: () => string | null;
 	/** abre o fluxo de escolher ícone para (caminhoBase, nomeView). */
 	escolherIcone: (caminhoBase: string | null, nomeView: string) => void;
+	/** define o modo de exibição da aba (ícone+nome / só ícone / só nome) e persiste. */
+	definirModo: (caminhoBase: string | null, nomeView: string, modo: ModoExibicao) => void;
 	/**
 	 * (Fase 2) Lista de nomes de views a mostrar, na ordem desejada. Se undefined/null, mostra todas
 	 * as views do arquivo. Se definido, filtra e reordena por essa lista (nomes inexistentes são ignorados).
@@ -59,7 +61,12 @@ export class BarraDeAbas {
 
 			const ativa = nomeViewAtiva(this.basesViewEl) ?? "";
 			const hash =
-				views.map((v) => `${v.nome}:${iconeDaView(this.dados, caminho, v.nome) ?? ""}`).join("|") +
+				views
+					.map(
+						(v) =>
+							`${v.nome}:${iconeDaView(this.dados, caminho, v.nome) ?? ""}:${modoDaView(this.dados, caminho, v.nome)}`
+					)
+					.join("|") +
 				"#" + ativa + (curado ? "@curado" : "");
 			if (hash === this.hashAtual && this.barraEl?.isConnected) return;
 			this.hashAtual = hash;
@@ -100,17 +107,28 @@ export class BarraDeAbas {
 			aba.type = "button";
 			if (view.nome === nomeAtiva) aba.classList.add("is-active");
 
-			const iconeEl = document.createElement("span");
-			iconeEl.className = "base-tabs-aba-icone";
-			const icone =
-				iconeDaView(this.dados, caminho, view.nome) ?? ICONE_POR_TIPO[view.tipo] ?? ICONE_FALLBACK;
-			setIcon(iconeEl, icone);
-			aba.appendChild(iconeEl);
+			const modo = modoDaView(this.dados, caminho, view.nome);
 
-			const nomeEl = document.createElement("span");
-			nomeEl.className = "base-tabs-aba-nome";
-			nomeEl.textContent = view.nome;
-			aba.appendChild(nomeEl);
+			// ícone (some no modo "só nome").
+			if (modo !== "so-nome") {
+				const iconeEl = document.createElement("span");
+				iconeEl.className = "base-tabs-aba-icone";
+				const icone =
+					iconeDaView(this.dados, caminho, view.nome) ?? ICONE_POR_TIPO[view.tipo] ?? ICONE_FALLBACK;
+				setIcon(iconeEl, icone);
+				aba.appendChild(iconeEl);
+			}
+
+			// nome (some no modo "só ícone").
+			if (modo !== "so-icone") {
+				const nomeEl = document.createElement("span");
+				nomeEl.className = "base-tabs-aba-nome";
+				nomeEl.textContent = view.nome;
+				aba.appendChild(nomeEl);
+			}
+
+			// no modo "só ícone", o nome vira tooltip para não perder a referência.
+			if (modo === "so-icone") aba.setAttribute("aria-label", view.nome);
 
 			aba.addEventListener("click", () => {
 				if (view.nome !== nomeAtiva) void trocarPara(this.basesViewEl, view.nome);
@@ -125,6 +143,21 @@ export class BarraDeAbas {
 						.setIcon("image")
 						.onClick(() => this.callbacks.escolherIcone(caminho, view.nome))
 				);
+				menu.addSeparator();
+				const opcoes: Array<{ modo: ModoExibicao; titulo: string; icone: string }> = [
+					{ modo: "ambos", titulo: "Ícone e nome", icone: "layout-list" },
+					{ modo: "so-icone", titulo: "Só ícone", icone: "image" },
+					{ modo: "so-nome", titulo: "Só nome", icone: "type" },
+				];
+				for (const op of opcoes) {
+					menu.addItem((item) =>
+						item
+							.setTitle(op.titulo)
+							.setIcon(op.icone)
+							.setChecked(modo === op.modo)
+							.onClick(() => this.callbacks.definirModo(caminho, view.nome, op.modo))
+					);
+				}
 				menu.showAtMouseEvent(ev);
 			});
 
