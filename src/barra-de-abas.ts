@@ -139,7 +139,8 @@ export class BarraDeAbas {
 		this.viewsRender = views;
 		this.nomeAtivaRender = nomeAtiva;
 		this.caminhoRender = caminho;
-		this.reavaliarOverflow();
+		// mede no próximo frame (garante que o layout já assentou; medir agora daria clientWidth=0).
+		requestAnimationFrame(() => this.reavaliarOverflow());
 		this.observarLargura(barra);
 	}
 
@@ -241,10 +242,21 @@ export class BarraDeAbas {
 		abas.forEach((a) => (a.style.display = ""));
 		overflow.style.display = "none";
 
-		// largura que a trilha pode ocupar = largura da barra menos o "…" e o "+" (se houver).
-		const larguraBarra = barra.clientWidth;
+		// Espaço disponível = largura da TOOLBAR menos os outros itens nativos dela (ordenar/filtro/etc.)
+		// menos os nossos botões fixos ("…" e "+"). Medir a barra não serve: ela encolhe pro conteúdo.
+		const toolbar = barra.parentElement;
+		if (!toolbar) return;
+		const larguraToolbar = toolbar.clientWidth;
+		if (larguraToolbar === 0) return; // layout ainda não assentou; um próximo ciclo remede.
+
+		// soma a largura dos itens irmãos da barra dentro da toolbar (os botões nativos).
+		let larguraIrmaos = 0;
+		for (const filho of Array.from(toolbar.children) as HTMLElement[]) {
+			if (filho !== barra) larguraIrmaos += filho.getBoundingClientRect().width;
+		}
 		const larguraExtras = this.larguraDe(overflow) + this.larguraDosBotoesFixos();
-		const disponivel = larguraBarra - larguraExtras;
+		// margem de folga pra não cortar por 1-2px de arredondamento.
+		const disponivel = larguraToolbar - larguraIrmaos - larguraExtras - 8;
 
 		// soma as larguras das abas até estourar; as seguintes vão pro overflow.
 		let usado = 0;
