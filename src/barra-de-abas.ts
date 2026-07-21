@@ -38,6 +38,15 @@ export class BarraDeAbas {
 	private barraEl: HTMLElement | null = null;
 	private hashAtual = "";
 
+	// estado para reavaliar o overflow quando a largura muda.
+	private trilhaEl: HTMLElement | null = null;
+	private overflowEl: HTMLElement | null = null;
+	private viewsRender: ViewDoArquivo[] = [];
+	private nomeAtivaRender = "";
+	private caminhoRender: string | null = null;
+	private resizeObserver: ResizeObserver | null = null;
+	private avaliandoOverflow = false;
+
 	constructor(
 		private app: App,
 		private basesViewEl: HTMLElement,
@@ -101,86 +110,202 @@ export class BarraDeAbas {
 		const barra = document.createElement("div");
 		barra.className = "base-tabs-barra";
 
-		views.forEach((view) => {
-			const aba = document.createElement("button");
-			aba.className = "base-tabs-aba";
-			aba.type = "button";
-			if (view.nome === nomeAtiva) aba.classList.add("is-active");
+		// container das abas visíveis (o que sofre overflow).
+		const trilha = barra.createDiv({ cls: "base-tabs-trilha" });
+		views.forEach((view) => trilha.appendChild(this.criarAba(view, nomeAtiva, caminho)));
 
-			const modo = modoDaView(this.dados, caminho, view.nome);
+		// botão "..." (overflow) — preenchido depois de medir o que não coube.
+		const overflowEl = barra.createEl("button", { cls: "base-tabs-aba base-tabs-overflow" });
+		overflowEl.type = "button";
+		overflowEl.setAttribute("aria-label", "Mais visualizações");
+		overflowEl.style.display = "none";
+		setIcon(overflowEl, "more-horizontal");
 
-			// ícone (some no modo "só nome").
-			if (modo !== "so-nome") {
-				const iconeEl = document.createElement("span");
-				iconeEl.className = "base-tabs-aba-icone";
-				const icone =
-					iconeDaView(this.dados, caminho, view.nome) ?? ICONE_POR_TIPO[view.tipo] ?? ICONE_FALLBACK;
-				setIcon(iconeEl, icone);
-				aba.appendChild(iconeEl);
-			}
-
-			// nome (some no modo "só ícone").
-			if (modo !== "so-icone") {
-				const nomeEl = document.createElement("span");
-				nomeEl.className = "base-tabs-aba-nome";
-				nomeEl.textContent = view.nome;
-				aba.appendChild(nomeEl);
-			}
-
-			// no modo "só ícone", o nome vira tooltip para não perder a referência.
-			if (modo === "so-icone") aba.setAttribute("aria-label", view.nome);
-
-			aba.addEventListener("click", () => {
-				if (view.nome !== nomeAtiva) void trocarPara(this.basesViewEl, view.nome);
-			});
-
-			aba.addEventListener("contextmenu", (ev) => {
-				ev.preventDefault();
-				const menu = new Menu();
-				menu.addItem((item) =>
-					item
-						.setTitle("Escolher ícone…")
-						.setIcon("image")
-						.onClick(() => this.callbacks.escolherIcone(caminho, view.nome))
-				);
-				menu.addSeparator();
-				const opcoes: Array<{ modo: ModoExibicao; titulo: string; icone: string }> = [
-					{ modo: "ambos", titulo: "Ícone e nome", icone: "layout-list" },
-					{ modo: "so-icone", titulo: "Só ícone", icone: "image" },
-					{ modo: "so-nome", titulo: "Só nome", icone: "type" },
-				];
-				for (const op of opcoes) {
-					menu.addItem((item) =>
-						item
-							.setTitle(op.titulo)
-							.setIcon(op.icone)
-							.setChecked(modo === op.modo)
-							.onClick(() => this.callbacks.definirModo(caminho, view.nome, op.modo))
-					);
-				}
-				menu.showAtMouseEvent(ev);
-			});
-
-			barra.appendChild(aba);
-		});
-
-		// botão "+" só no modo normal (base aberta como arquivo). Num embed curado não faz sentido.
-		if (!curado) {
-			const addEl = document.createElement("button");
-			addEl.className = "base-tabs-aba base-tabs-add";
+		// botão "+" só na base aberta como arquivo (não em embeds nativos nem curados).
+		if (!curado && !this.ehEmbed()) {
+			const addEl = barra.createEl("button", { cls: "base-tabs-aba base-tabs-add" });
 			addEl.type = "button";
 			addEl.setAttribute("aria-label", "Adicionar visualização");
 			setIcon(addEl, "plus");
 			addEl.addEventListener("click", () => void adicionarView(this.basesViewEl));
-			barra.appendChild(addEl);
 		}
 
 		toolbar.prepend(barra);
 		this.barraEl = barra;
+
+		// mede o overflow agora e a cada mudança de largura da barra.
+		this.trilhaEl = trilha;
+		this.overflowEl = overflowEl;
+		this.viewsRender = views;
+		this.nomeAtivaRender = nomeAtiva;
+		this.caminhoRender = caminho;
+		this.reavaliarOverflow();
+		this.observarLargura(barra);
+	}
+
+	/** Cria uma aba (ícone/nome conforme o modo + cliques + menu de contexto). */
+	private criarAba(view: ViewDoArquivo, nomeAtiva: string, caminho: string | null): HTMLElement {
+		const aba = document.createElement("button");
+		aba.className = "base-tabs-aba";
+		aba.type = "button";
+		if (view.nome === nomeAtiva) aba.classList.add("is-active");
+
+		const modo = modoDaView(this.dados, caminho, view.nome);
+
+		if (modo !== "so-nome") {
+			const iconeEl = aba.createSpan({ cls: "base-tabs-aba-icone" });
+			const icone = iconeDaView(this.dados, caminho, view.nome) ?? ICONE_POR_TIPO[view.tipo] ?? ICONE_FALLBACK;
+			setIcon(iconeEl, icone);
+		}
+		if (modo !== "so-icone") {
+			aba.createSpan({ cls: "base-tabs-aba-nome", text: view.nome });
+		}
+		if (modo === "so-icone") aba.setAttribute("aria-label", view.nome);
+
+		aba.addEventListener("click", () => {
+			if (view.nome !== nomeAtiva) void trocarPara(this.basesViewEl, view.nome);
+		});
+		aba.addEventListener("contextmenu", (ev) => this.abrirMenuContexto(ev, view, caminho, modo));
+		return aba;
+	}
+
+	private abrirMenuContexto(ev: MouseEvent, view: ViewDoArquivo, caminho: string | null, modo: ModoExibicao): void {
+		ev.preventDefault();
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item
+				.setTitle("Escolher ícone…")
+				.setIcon("image")
+				.onClick(() => this.callbacks.escolherIcone(caminho, view.nome))
+		);
+		menu.addSeparator();
+		const opcoes: Array<{ modo: ModoExibicao; titulo: string; icone: string }> = [
+			{ modo: "ambos", titulo: "Ícone e nome", icone: "layout-list" },
+			{ modo: "so-icone", titulo: "Só ícone", icone: "image" },
+			{ modo: "so-nome", titulo: "Só nome", icone: "type" },
+		];
+		for (const op of opcoes) {
+			menu.addItem((item) =>
+				item
+					.setTitle(op.titulo)
+					.setIcon(op.icone)
+					.setChecked(modo === op.modo)
+					.onClick(() => this.callbacks.definirModo(caminho, view.nome, op.modo))
+			);
+		}
+		menu.showAtMouseEvent(ev);
+	}
+
+	/** True se a base está num embed (nativo `![[...]]` ou curado), não aberta como arquivo. */
+	private ehEmbed(): boolean {
+		return !!this.basesViewEl.closest(".internal-embed, .base-tabs-embed-curado, .markdown-preview-view, .markdown-rendered");
+	}
+
+	/** Reobserva a largura da barra para reavaliar o overflow quando o painel é redimensionado. */
+	private observarLargura(barra: HTMLElement): void {
+		this.resizeObserver?.disconnect();
+		this.resizeObserver = new ResizeObserver(() => this.reavaliarOverflow());
+		this.resizeObserver.observe(barra);
+	}
+
+	/**
+	 * Mede quais abas cabem na largura disponível. As que não couberem são escondidas e vão para o
+	 * menu "…" (que aparece antes do "+"). Se tudo couber, o "…" some.
+	 */
+	private reavaliarOverflow(): void {
+		if (this.avaliandoOverflow) return; // evita loop com o ResizeObserver.
+		const trilha = this.trilhaEl;
+		const overflow = this.overflowEl;
+		const barra = this.barraEl;
+		if (!trilha || !overflow || !barra) return;
+
+		const abas = Array.from(trilha.children) as HTMLElement[];
+		if (abas.length === 0) return;
+
+		this.avaliandoOverflow = true;
+		try {
+			this.medirEDistribuir(abas, trilha, overflow, barra);
+		} finally {
+			// solta o guard no próximo frame (depois que o layout assentou).
+			requestAnimationFrame(() => (this.avaliandoOverflow = false));
+		}
+	}
+
+	private medirEDistribuir(
+		abas: HTMLElement[],
+		_trilha: HTMLElement,
+		overflow: HTMLElement,
+		barra: HTMLElement
+	): void {
+		// mostra todas para medir do zero.
+		abas.forEach((a) => (a.style.display = ""));
+		overflow.style.display = "none";
+
+		// largura que a trilha pode ocupar = largura da barra menos o "…" e o "+" (se houver).
+		const larguraBarra = barra.clientWidth;
+		const larguraExtras = this.larguraDe(overflow) + this.larguraDosBotoesFixos();
+		const disponivel = larguraBarra - larguraExtras;
+
+		// soma as larguras das abas até estourar; as seguintes vão pro overflow.
+		let usado = 0;
+		const escondidas: number[] = [];
+		abas.forEach((aba, i) => {
+			const w = this.larguraDe(aba);
+			if (usado + w <= disponivel || i === 0) {
+				usado += w; // a primeira aba sempre aparece, mesmo apertada.
+			} else {
+				escondidas.push(i);
+				aba.style.display = "none";
+			}
+		});
+
+		if (escondidas.length === 0) {
+			overflow.style.display = "none";
+			return;
+		}
+
+		// configura o "…" para abrir um menu com as views escondidas.
+		overflow.style.display = "";
+		overflow.onclick = (ev) => {
+			const menu = new Menu();
+			for (const i of escondidas) {
+				const view = this.viewsRender[i];
+				if (!view) continue;
+				const icone =
+					iconeDaView(this.dados, this.caminhoRender, view.nome) ?? ICONE_POR_TIPO[view.tipo] ?? ICONE_FALLBACK;
+				menu.addItem((item) =>
+					item
+						.setTitle(view.nome)
+						.setIcon(icone)
+						.setChecked(view.nome === this.nomeAtivaRender)
+						.onClick(() => {
+							if (view.nome !== this.nomeAtivaRender) void trocarPara(this.basesViewEl, view.nome);
+						})
+				);
+			}
+			menu.showAtMouseEvent(ev);
+		};
+	}
+
+	/** Largura de um elemento + o gap aproximado (--size-4-1 = 4px). Mede mesmo se estiver oculto. */
+	private larguraDe(el: HTMLElement): number {
+		const estavaOculto = el.style.display === "none";
+		if (estavaOculto) el.style.display = "";
+		const w = el.getBoundingClientRect().width + 4;
+		if (estavaOculto) el.style.display = "none";
+		return w;
+	}
+
+	/** Largura somada dos botões fixos após a trilha (o "+"), se presentes. */
+	private larguraDosBotoesFixos(): number {
+		const add = this.barraEl?.querySelector<HTMLElement>(".base-tabs-add");
+		return add ? this.larguraDe(add) : 0;
 	}
 
 	destruir(): void {
 		try {
+			this.resizeObserver?.disconnect();
+			this.resizeObserver = null;
 			this.barraEl?.remove();
 			const toolbar = encontrarToolbar(this.basesViewEl);
 			toolbar?.classList.remove("base-tabs-ativo");
@@ -188,6 +313,8 @@ export class BarraDeAbas {
 			/* nada a fazer */
 		}
 		this.barraEl = null;
+		this.trilhaEl = null;
+		this.overflowEl = null;
 		this.hashAtual = "";
 	}
 }

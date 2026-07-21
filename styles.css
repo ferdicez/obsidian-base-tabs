@@ -2,8 +2,7 @@
    Usa variáveis do tema do Obsidian para respeitar o tema ativo (Minimal, etc.). */
 
 /* Barra de abas injetada no início da toolbar da Base.
-   Linha única com scroll horizontal quando não couber — nunca quebra/empilha (evita colidir
-   com o resto da toolbar). */
+   Linha única; as abas que não couberem vão para o menu "…" (overflow), calculado em JS. */
 .base-tabs-barra {
 	display: flex;
 	align-items: center;
@@ -11,11 +10,16 @@
 	flex-wrap: nowrap;
 	min-width: 0;
 	max-width: 100%;
-	overflow-x: auto;
-	scrollbar-width: none; /* Firefox: sem barra de rolagem visível */
+	overflow: hidden;
 }
-.base-tabs-barra::-webkit-scrollbar {
-	display: none; /* Chromium: idem */
+/* trilha das abas visíveis. */
+.base-tabs-trilha {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1, 4px);
+	flex-wrap: nowrap;
+	min-width: 0;
+	overflow: hidden;
 }
 .base-tabs-aba {
 	flex: 0 0 auto; /* abas não encolhem nem quebram */
