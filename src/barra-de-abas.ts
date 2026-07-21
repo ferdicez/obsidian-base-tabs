@@ -106,6 +106,9 @@ export class BarraDeAbas {
 		curado: boolean
 	): void {
 		if (this.barraEl) this.barraEl.remove();
+		// remove QUALQUER barra órfã já presente nesta toolbar (ex.: sobrou de um render anterior
+		// quando o Obsidian recriou a .bases-view). Garante uma única barra por toolbar.
+		toolbar.querySelectorAll(":scope > .base-tabs-barra").forEach((el) => el.remove());
 
 		const barra = document.createElement("div");
 		barra.className = "base-tabs-barra";
@@ -234,42 +237,34 @@ export class BarraDeAbas {
 
 	private medirEDistribuir(
 		abas: HTMLElement[],
-		_trilha: HTMLElement,
+		trilha: HTMLElement,
 		overflow: HTMLElement,
-		barra: HTMLElement
+		_barra: HTMLElement
 	): void {
 		// mostra todas para medir do zero.
 		abas.forEach((a) => (a.style.display = ""));
 		overflow.style.display = "none";
 
-		// Espaço disponível = largura da TOOLBAR menos os outros itens nativos dela (ordenar/filtro/etc.)
-		// menos os nossos botões fixos ("…" e "+"). Medir a barra não serve: ela encolhe pro conteúdo.
-		const toolbar = barra.parentElement;
-		if (!toolbar) return;
-		const larguraToolbar = toolbar.clientWidth;
-		if (larguraToolbar === 0) return; // layout ainda não assentou; um próximo ciclo remede.
-
-		// soma a largura dos itens irmãos da barra dentro da toolbar (os botões nativos).
-		let larguraIrmaos = 0;
-		for (const filho of Array.from(toolbar.children) as HTMLElement[]) {
-			if (filho !== barra) larguraIrmaos += filho.getBoundingClientRect().width;
+		// A trilha tem overflow:hidden e flex:1. Se o conteúdo (scrollWidth) couber na largura
+		// visível (clientWidth), NÃO há overflow — nada a esconder. Comparação direta e confiável,
+		// sem depender de somar larguras de irmãos.
+		const clientW = trilha.clientWidth;
+		if (clientW === 0) return; // layout ainda não assentou; um próximo ciclo remede.
+		const folga = 2; // tolerância de arredondamento.
+		if (trilha.scrollWidth <= clientW + folga) {
+			overflow.style.display = "none";
+			return;
 		}
-		const larguraExtras = this.larguraDe(overflow) + this.larguraDosBotoesFixos();
-		// margem de folga pra não cortar por 1-2px de arredondamento.
-		const disponivel = larguraToolbar - larguraIrmaos - larguraExtras - 8;
 
-		// soma as larguras das abas até estourar; as seguintes vão pro overflow.
-		let usado = 0;
+		// Há overflow: reserva espaço para o "…" e esconde abas do fim até o conteúdo caber.
+		const larguraOverflow = this.larguraDe(overflow);
 		const escondidas: number[] = [];
-		abas.forEach((aba, i) => {
-			const w = this.larguraDe(aba);
-			if (usado + w <= disponivel || i === 0) {
-				usado += w; // a primeira aba sempre aparece, mesmo apertada.
-			} else {
-				escondidas.push(i);
-				aba.style.display = "none";
-			}
-		});
+		for (let i = abas.length - 1; i >= 1; i--) {
+			// enquanto o conteúdo (menos as já escondidas) não couber com o "…" reservado, esconde mais.
+			if (trilha.scrollWidth <= clientW - larguraOverflow + folga) break;
+			abas[i].style.display = "none";
+			escondidas.unshift(i);
+		}
 
 		if (escondidas.length === 0) {
 			overflow.style.display = "none";
@@ -306,12 +301,6 @@ export class BarraDeAbas {
 		const w = el.getBoundingClientRect().width + 4;
 		if (estavaOculto) el.style.display = "none";
 		return w;
-	}
-
-	/** Largura somada dos botões fixos após a trilha (o "+"), se presentes. */
-	private larguraDosBotoesFixos(): number {
-		const add = this.barraEl?.querySelector<HTMLElement>(".base-tabs-add");
-		return add ? this.larguraDe(add) : 0;
 	}
 
 	destruir(): void {

@@ -2,22 +2,24 @@
    Usa variáveis do tema do Obsidian para respeitar o tema ativo (Minimal, etc.). */
 
 /* Barra de abas injetada no início da toolbar da Base.
-   Linha única; as abas que não couberem vão para o menu "…" (overflow), calculado em JS. */
+   Ocupa o espaço restante da toolbar (flex:1, min-width:0); as abas que não couberem vão
+   para o menu "…" (overflow), calculado em JS comparando scrollWidth vs clientWidth da trilha. */
 .base-tabs-barra {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1, 4px);
 	flex-wrap: nowrap;
+	flex: 1 1 auto;
 	min-width: 0;
-	max-width: 100%;
 	overflow: hidden;
 }
-/* trilha das abas visíveis. */
+/* trilha das abas visíveis: ocupa o espaço e esconde o que passar. */
 .base-tabs-trilha {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1, 4px);
 	flex-wrap: nowrap;
+	flex: 1 1 auto;
 	min-width: 0;
 	overflow: hidden;
 }

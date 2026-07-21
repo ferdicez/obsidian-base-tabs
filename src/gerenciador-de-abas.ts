@@ -45,6 +45,10 @@ export class GerenciadorDeAbas {
 			// bloco, que já aplica a barra com o filtro de views. Sem isto, a base receberia 2 barras.
 			if (baseEl.closest(".base-tabs-embed-curado")) return;
 
+			// Ignora .bases-view em transição/ocultas (largura 0). O Obsidian às vezes mantém uma
+			// .bases-view antiga no DOM durante um re-render — sem isto, apareciam 2 barras.
+			if (baseEl.offsetParent === null || baseEl.getBoundingClientRect().width === 0) return;
+
 			const caminho = this.caminhoDaBase(baseEl);
 
 			// Garante o conteúdo do .base em cache. Se ainda não temos, dispara a leitura e reescaneia
