@@ -68,6 +68,9 @@ class EmbedCurado extends MarkdownRenderChild {
 	private removerOuvinte: (() => void) | null = null;
 	private containerInterno: HTMLElement | null = null;
 	private caminhoResolvido: string | null = null;
+	private timerAplicar: number | null = null;
+	/** enquanto true, ignoramos mutações — são as que NÓS causamos ao injetar a barra. */
+	private mexendoNoDom = false;
 
 	constructor(
 		private appRef: App,
@@ -121,8 +124,12 @@ class EmbedCurado extends MarkdownRenderChild {
 			return;
 		}
 
-		// observa a .bases-view surgir e (re)aplica a barra curada a cada mudança do DOM.
-		this.observer = new MutationObserver(() => this.aplicar(container));
+		// Observa a .bases-view surgir e (re)aplica a barra curada. FILTRA as mutações: só reage quando
+		// uma .bases-view/.bases-toolbar entra/sai — NÃO reage às mutações internas da base (cada card/
+		// linha que a base renderiza). Sem esse filtro, uma base grande (milhares de cards) dispararia
+		// o observer milhares de vezes, cada uma varrendo o container inteiro → layout thrashing e
+		// travamento (mesma classe de bug das partes 6/7, aqui no caminho do embed curado).
+		this.observer = new MutationObserver((mutacoes) => this.aoMutar(mutacoes, container));
 		this.observer.observe(container, { childList: true, subtree: true });
 		this.aplicar(container);
 
@@ -132,19 +139,57 @@ class EmbedCurado extends MarkdownRenderChild {
 		});
 	}
 
+	/**
+	 * Filtra as mutações do observer: só reage quando uma .bases-view/.bases-toolbar realmente entra
+	 * ou sai. Ignora as mutações internas da base (cada card/linha renderizada) — que numa base grande
+	 * seriam milhares — e as que NÓS causamos ao injetar a barra (guard mexendoNoDom). Debounce agrupa
+	 * rajadas de mutação num único re-aplicar.
+	 */
+	private aoMutar(mutacoes: MutationRecord[], container: HTMLElement): void {
+		if (this.mexendoNoDom) return;
+		for (const m of mutacoes) {
+			const nos = [...Array.from(m.addedNodes), ...Array.from(m.removedNodes)];
+			for (const no of nos) {
+				if (!(no instanceof HTMLElement)) continue;
+				if (
+					no.matches?.(".bases-view, .bases-toolbar") ||
+					no.querySelector?.(".bases-view, .bases-toolbar")
+				) {
+					this.agendarAplicar(container);
+					return;
+				}
+			}
+		}
+	}
+
+	private agendarAplicar(container: HTMLElement): void {
+		if (this.timerAplicar !== null) return;
+		this.timerAplicar = window.setTimeout(() => {
+			this.timerAplicar = null;
+			this.aplicar(container);
+		}, 200);
+	}
+
 	private aplicar(container: HTMLElement): void {
 		const baseEl = container.querySelector<HTMLElement>(".bases-view");
 		if (!baseEl) return;
 		const caminho = this.caminhoResolvido ?? this.caminhoBase;
-		if (!this.barra) {
-			this.barra = new BarraDeAbas(this.appRef, baseEl, this.getDados(), {
-				caminhoBase: () => caminho,
-				escolherIcone: this.escolherIcone,
-				definirModo: this.definirModo,
-				filtrarViews: () => this.views,
-			});
+		// Enquanto injetamos a barra, ignoramos as mutações que nós mesmos causamos (senão o observer
+		// dispara de volta). Solta o guard no próximo tick, depois das mutações já enfileiradas.
+		this.mexendoNoDom = true;
+		try {
+			if (!this.barra) {
+				this.barra = new BarraDeAbas(this.appRef, baseEl, this.getDados(), {
+					caminhoBase: () => caminho,
+					escolherIcone: this.escolherIcone,
+					definirModo: this.definirModo,
+					filtrarViews: () => this.views,
+				});
+			}
+			this.barra.atualizar(this.getDados());
+		} finally {
+			window.setTimeout(() => (this.mexendoNoDom = false), 0);
 		}
-		this.barra.atualizar(this.getDados());
 	}
 
 	/** Mostra uma mensagem de erro amigável no lugar do embed. */
@@ -156,6 +201,10 @@ class EmbedCurado extends MarkdownRenderChild {
 	onunload(): void {
 		this.observer?.disconnect();
 		this.observer = null;
+		if (this.timerAplicar !== null) {
+			window.clearTimeout(this.timerAplicar);
+			this.timerAplicar = null;
+		}
 		this.barra?.destruir();
 		this.barra = null;
 		this.removerOuvinte?.();

@@ -13,11 +13,6 @@
 	max-width: 100%;
 	overflow-x: auto;
 	scrollbar-width: none; /* Firefox: sem barra de rolagem visível */
-	/* Fundo clarinho só atrás das abas (cor do hover do tema), pra suavizar o cinza
-	   da toolbar nativa sem mexer no resto dela. Cantos arredondados + respiro. */
-	background: var(--background-modifier-hover);
-	padding: var(--size-4-1, 4px);
-	border-radius: var(--radius-m, 8px);
 }
 .base-tabs-barra::-webkit-scrollbar {
 	display: none; /* Chromium: idem */
@@ -26,18 +21,22 @@
 	flex: 0 0 auto; /* abas não encolhem nem quebram */
 }
 
-/* Cada aba: ícone + nome, discreta; a ativa ganha sublinhado no accent. */
+/* Cada aba: ícone + nome, estilo "botão" — fundo clarinho próprio (cor do hover do tema),
+   cantos arredondados por inteiro; a ativa ganha sublinhado no accent. */
 .base-tabs-aba {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--size-4-1, 4px);
 	padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
-	background: transparent;
-	border: none;
-	border-bottom: 2px solid transparent;
-	/* cantos de cima arredondados; base reta pra encostar no sublinhado (estilo aba). */
-	border-radius: var(--radius-s, 6px) var(--radius-s, 6px) 0 0;
-	box-shadow: none;
+	/* Fundo de cada aba: clarinho sutil do tema (cinza translúcido do hover), que acompanha o vault.
+	   Borda fininha ao redor (topo/laterais) + borda de baixo de 2px transparente (vira o
+	   sublinhado accent na ativa). !important/box-shadow zerado porque temas como o Minimal
+	   estilizam <button> com fundo branco + sombra no hover, que venceria o nosso estilo. */
+	background-color: var(--background-modifier-hover) !important;
+	border: 1px solid var(--background-modifier-border) !important;
+	border-bottom: 2px solid transparent !important;
+	border-radius: var(--radius-s, 6px);
+	box-shadow: none !important;
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 	line-height: 1.2;
@@ -46,13 +45,16 @@
 }
 
 .base-tabs-aba:hover {
-	background: var(--background-modifier-hover);
+	background-color: var(--background-modifier-active-hover, var(--background-modifier-hover)) !important;
 	color: var(--text-normal);
+	box-shadow: none !important;
+	border-color: var(--background-modifier-border-hover, var(--background-modifier-border)) !important;
+	border-bottom-color: transparent !important;
 }
 
 .base-tabs-aba.is-active {
 	color: var(--text-normal);
-	border-bottom-color: var(--interactive-accent);
+	border-bottom-color: var(--interactive-accent) !important;
 	font-weight: var(--font-medium, 500);
 }
 
