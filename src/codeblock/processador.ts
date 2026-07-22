@@ -125,12 +125,20 @@ class EmbedCurado extends MarkdownRenderChild {
 		}
 
 		// Observa a .bases-view surgir e (re)aplica a barra curada. FILTRA as mutações: só reage quando
-		// uma .bases-view/.bases-toolbar entra/sai — NÃO reage às mutações internas da base (cada card/
-		// linha que a base renderiza). Sem esse filtro, uma base grande (milhares de cards) dispararia
-		// o observer milhares de vezes, cada uma varrendo o container inteiro → layout thrashing e
-		// travamento (mesma classe de bug das partes 6/7, aqui no caminho do embed curado).
+		// (a) uma .bases-view/.bases-toolbar entra/sai, ou (b) o atributo data-view-name da .bases-view
+		// muda (troca de view — precisa reaplicar pra mover o sublinhado "ativo" pra aba certa).
+		// NÃO reage às mutações internas da base (cada card/linha que a base renderiza). Sem esse filtro,
+		// uma base grande (milhares de cards) dispararia o observer milhares de vezes, cada uma varrendo
+		// o container inteiro → layout thrashing e travamento (mesma classe de bug das partes 6/7, aqui
+		// no caminho do embed curado). O data-view-name muda 1x por troca de view, então observá-lo é
+		// barato e não reintroduz o travamento.
 		this.observer = new MutationObserver((mutacoes) => this.aoMutar(mutacoes, container));
-		this.observer.observe(container, { childList: true, subtree: true });
+		this.observer.observe(container, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeFilter: ["data-view-name"],
+		});
 		this.aplicar(container);
 
 		// re-render externo (ex.: troca de ícone pelo modal).
@@ -140,14 +148,25 @@ class EmbedCurado extends MarkdownRenderChild {
 	}
 
 	/**
-	 * Filtra as mutações do observer: só reage quando uma .bases-view/.bases-toolbar realmente entra
-	 * ou sai. Ignora as mutações internas da base (cada card/linha renderizada) — que numa base grande
-	 * seriam milhares — e as que NÓS causamos ao injetar a barra (guard mexendoNoDom). Debounce agrupa
-	 * rajadas de mutação num único re-aplicar.
+	 * Filtra as mutações do observer: só reage quando uma .bases-view/.bases-toolbar entra/sai, ou
+	 * quando o data-view-name de uma .bases-view muda (troca de view). Ignora as mutações internas da
+	 * base (cada card/linha renderizada) — que numa base grande seriam milhares — e as que NÓS causamos
+	 * ao injetar a barra (guard mexendoNoDom). Debounce agrupa rajadas de mutação num único re-aplicar.
 	 */
 	private aoMutar(mutacoes: MutationRecord[], container: HTMLElement): void {
 		if (this.mexendoNoDom) return;
 		for (const m of mutacoes) {
+			// (b) troca de view: o data-view-name da .bases-view mudou.
+			if (
+				m.type === "attributes" &&
+				m.attributeName === "data-view-name" &&
+				m.target instanceof HTMLElement &&
+				m.target.matches(".bases-view")
+			) {
+				this.agendarAplicar(container);
+				return;
+			}
+			// (a) uma .bases-view/.bases-toolbar entrou ou saiu.
 			const nos = [...Array.from(m.addedNodes), ...Array.from(m.removedNodes)];
 			for (const no of nos) {
 				if (!(no instanceof HTMLElement)) continue;
