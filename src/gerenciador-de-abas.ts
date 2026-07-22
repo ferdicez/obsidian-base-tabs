@@ -8,11 +8,15 @@ import { preencherCacheBase } from "./leitor-base";
  * uma BarraDeAbas por Base (via WeakMap, para não duplicar). Antes de renderizar, garante que o
  * conteúdo do arquivo .base está em cache (leitura assíncrona) — as views vêm do arquivo, não do DOM.
  */
+const DEBOUNCE_MS = 200;
+
 export class GerenciadorDeAbas {
 	private observer: MutationObserver | null = null;
 	private barras = new WeakMap<HTMLElement, BarraDeAbas>();
-	private agendado = false;
+	private timer: number | null = null;
 	private cacheEmAndamento = new Set<string>();
+	/** enquanto true, ignoramos mutações — são as que NÓS causamos ao injetar a barra. */
+	private mexendoNoDom = false;
 
 	constructor(
 		private app: App,
@@ -23,49 +27,79 @@ export class GerenciadorDeAbas {
 
 	iniciar(): void {
 		const raiz = this.app.workspace.containerEl;
-		this.observer = new MutationObserver(() => this.agendarEscaneamento());
+		this.observer = new MutationObserver((mutacoes) => this.aoMutar(mutacoes));
 		this.observer.observe(raiz, { childList: true, subtree: true });
 		this.agendarEscaneamento();
 	}
 
+	/**
+	 * Filtra as mutações: só reage quando uma .bases-view/.bases-toolbar realmente aparece ou some.
+	 * Bases grandes (milhares de cards) geram muitas mutações irrelevantes — ignorá-las evita loop e
+	 * travamento. Também ignoramos mutações causadas pela nossa própria injeção (guard mexendoNoDom).
+	 */
+	private aoMutar(mutacoes: MutationRecord[]): void {
+		if (this.mexendoNoDom) return;
+		for (const m of mutacoes) {
+			// só nos interessam nós adicionados/removidos que sejam (ou contenham) uma base/toolbar.
+			const nos = [...Array.from(m.addedNodes), ...Array.from(m.removedNodes)];
+			for (const no of nos) {
+				if (!(no instanceof HTMLElement)) continue;
+				if (
+					no.matches?.(".bases-view, .bases-toolbar") ||
+					no.querySelector?.(".bases-view, .bases-toolbar")
+				) {
+					this.agendarEscaneamento();
+					return;
+				}
+			}
+		}
+	}
+
 	agendarEscaneamento(): void {
-		if (this.agendado) return;
-		this.agendado = true;
-		requestAnimationFrame(() => {
-			this.agendado = false;
+		if (this.timer !== null) return;
+		this.timer = window.setTimeout(() => {
+			this.timer = null;
 			this.escanear();
-		});
+		}, DEBOUNCE_MS);
 	}
 
 	private escanear(): void {
 		const dados = this.getDados();
 		const bases = document.querySelectorAll<HTMLElement>(".bases-view");
-		bases.forEach((baseEl) => {
-			// Ignora bases dentro de um embed curado (Fase 2): essas são geridas pelo processador do
-			// bloco, que já aplica a barra com o filtro de views. Sem isto, a base receberia 2 barras.
-			if (baseEl.closest(".base-tabs-embed-curado")) return;
+		// enquanto injetamos/atualizamos as barras, ignoramos as mutações que nós mesmos causamos
+		// (senão o MutationObserver dispara de volta e entra em loop). Solta no próximo tick.
+		this.mexendoNoDom = true;
+		try {
+			bases.forEach((baseEl) => {
+				// Ignora bases dentro de um embed curado (Fase 2): geridas pelo processador do bloco.
+				if (baseEl.closest(".base-tabs-embed-curado")) return;
 
-			// Ignora .bases-view em transição/ocultas (largura 0). O Obsidian às vezes mantém uma
-			// .bases-view antiga no DOM durante um re-render — sem isto, apareciam 2 barras.
-			if (baseEl.offsetParent === null || baseEl.getBoundingClientRect().width === 0) return;
+				// Ignora EMBEDS NATIVOS (![[base]]) e bases renderizadas dentro de notas: o plugin só age
+				// na base aberta como ARQUIVO (leaf do tipo "bases"). Aplicar abas em embeds de bases
+				// grandes travava o app — por decisão, embeds nativos ficam 100% nativos.
+				if (baseEl.closest(".internal-embed, .markdown-preview-view, .markdown-rendered, .markdown-source-view")) return;
 
-			const caminho = this.caminhoDaBase(baseEl);
+				// Ignora .bases-view em transição/ocultas (largura 0).
+				if (baseEl.offsetParent === null || baseEl.getBoundingClientRect().width === 0) return;
 
-			// Garante o conteúdo do .base em cache. Se ainda não temos, dispara a leitura e reescaneia
-			// quando terminar (o render seguinte já encontra as views).
-			if (caminho) this.garantirCache(caminho);
+				const caminho = this.caminhoDaBase(baseEl);
+				if (caminho) this.garantirCache(caminho);
 
-			let barra = this.barras.get(baseEl);
-			if (!barra) {
-				barra = new BarraDeAbas(this.app, baseEl, dados, {
-					caminhoBase: () => this.caminhoDaBase(baseEl),
-					escolherIcone: this.escolherIcone,
-					definirModo: this.definirModo,
-				});
-				this.barras.set(baseEl, barra);
-			}
-			barra.atualizar(dados);
-		});
+				let barra = this.barras.get(baseEl);
+				if (!barra) {
+					barra = new BarraDeAbas(this.app, baseEl, dados, {
+						caminhoBase: () => this.caminhoDaBase(baseEl),
+						escolherIcone: this.escolherIcone,
+						definirModo: this.definirModo,
+					});
+					this.barras.set(baseEl, barra);
+				}
+				barra.atualizar(dados);
+			});
+		} finally {
+			// solta o guard depois que as mutações da injeção já foram enfileiradas e ignoradas.
+			window.setTimeout(() => (this.mexendoNoDom = false), 0);
+		}
 	}
 
 	/** Lê o .base em background (uma vez por caminho) e reescaneia ao concluir. */
@@ -92,7 +126,7 @@ export class GerenciadorDeAbas {
 				if (file?.path) return file.path;
 			}
 		}
-		const embed = baseEl.closest<HTMLElement>(".bases-embed, .internal-embed[src], [data-path]");
+		const embed = baseEl.closest<HTMLElement>(".bases-embed, .internal-embed[src], [data-path], [src]");
 		const src = embed?.getAttribute("src") ?? embed?.getAttribute("data-path");
 		if (src) {
 			// embeds podem ter forma "Arquivo.base" ou "Arquivo" — normaliza para .base.
@@ -108,6 +142,10 @@ export class GerenciadorDeAbas {
 	destruir(): void {
 		this.observer?.disconnect();
 		this.observer = null;
+		if (this.timer !== null) {
+			window.clearTimeout(this.timer);
+			this.timer = null;
+		}
 		document.querySelectorAll<HTMLElement>(".bases-view").forEach((baseEl) => {
 			this.barras.get(baseEl)?.destruir();
 		});

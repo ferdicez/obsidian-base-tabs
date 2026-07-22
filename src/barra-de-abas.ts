@@ -1,7 +1,7 @@
 import { Menu, setIcon } from "obsidian";
 import { iconeDaView, modoDaView, type DadosBaseTabs, type ModoExibicao } from "./dados";
 import { lerViewsDoArquivo, type ViewDoArquivo } from "./leitor-base";
-import { adicionarView, encontrarToolbar, nomeViewAtiva, trocarPara } from "./seletor-nativo";
+import { encontrarToolbar, nomeViewAtiva, trocarPara } from "./seletor-nativo";
 import type { App } from "obsidian";
 
 /** Ícone Lucide padrão por tipo de view, quando a usuária não escolheu um. */
@@ -24,7 +24,7 @@ export interface CallbacksBarra {
 	definirModo: (caminhoBase: string | null, nomeView: string, modo: ModoExibicao) => void;
 	/**
 	 * (Fase 2) Lista de nomes de views a mostrar, na ordem desejada. Se undefined/null, mostra todas
-	 * as views do arquivo. Se definido, filtra e reordena por essa lista (nomes inexistentes são ignorados).
+	 * as views do arquivo. Se definido, filtra e reordena por essa lista (nomes inexistentes ignorados).
 	 */
 	filtrarViews?: () => string[] | null;
 }
@@ -33,19 +33,13 @@ export interface CallbacksBarra {
  * Barra de abas de UMA Base. Lê as views do arquivo .base, injeta uma barra própria na toolbar nativa,
  * renderiza uma aba por view (ícone Lucide + nome), marca a ativa (via data-view-name) e liga o clique
  * à troca de view nativa. Idempotente: só re-renderiza quando o "hash" muda, evitando flicker.
+ *
+ * Sem medição de overflow (mantido simples e leve — a medição em bases grandes travava o app).
+ * Se as abas não couberem, a toolbar nativa já lida com o espaço; excesso simplesmente transborda.
  */
 export class BarraDeAbas {
 	private barraEl: HTMLElement | null = null;
 	private hashAtual = "";
-
-	// estado para reavaliar o overflow quando a largura muda.
-	private trilhaEl: HTMLElement | null = null;
-	private overflowEl: HTMLElement | null = null;
-	private viewsRender: ViewDoArquivo[] = [];
-	private nomeAtivaRender = "";
-	private caminhoRender: string | null = null;
-	private resizeObserver: ResizeObserver | null = null;
-	private avaliandoOverflow = false;
 
 	constructor(
 		private app: App,
@@ -81,7 +75,9 @@ export class BarraDeAbas {
 			this.hashAtual = hash;
 
 			toolbar.classList.add("base-tabs-ativo");
-			this.render(toolbar, views, ativa, caminho, curado);
+			// no embed curado, a toolbar fica "só pra visualizar" (esconde config, deixa só a lupa).
+			toolbar.classList.toggle("base-tabs-em-embed", curado);
+			this.render(toolbar, views, ativa, caminho);
 		} catch (e) {
 			console.warn("[base-tabs] falha ao atualizar barra:", e);
 		}
@@ -98,53 +94,17 @@ export class BarraDeAbas {
 		return filtro.map((nome) => porNome.get(nome)).filter((v): v is ViewDoArquivo => !!v);
 	}
 
-	private render(
-		toolbar: HTMLElement,
-		views: ViewDoArquivo[],
-		nomeAtiva: string,
-		caminho: string | null,
-		curado: boolean
-	): void {
+	private render(toolbar: HTMLElement, views: ViewDoArquivo[], nomeAtiva: string, caminho: string | null): void {
 		if (this.barraEl) this.barraEl.remove();
-		// remove QUALQUER barra órfã já presente nesta toolbar (ex.: sobrou de um render anterior
-		// quando o Obsidian recriou a .bases-view). Garante uma única barra por toolbar.
+		// remove qualquer barra órfã já presente nesta toolbar (garante uma única barra por toolbar).
 		toolbar.querySelectorAll(":scope > .base-tabs-barra").forEach((el) => el.remove());
 
 		const barra = document.createElement("div");
 		barra.className = "base-tabs-barra";
-
-		// container das abas visíveis (o que sofre overflow).
-		const trilha = barra.createDiv({ cls: "base-tabs-trilha" });
-		views.forEach((view) => trilha.appendChild(this.criarAba(view, nomeAtiva, caminho)));
-
-		// botão "..." (overflow) — preenchido depois de medir o que não coube.
-		const overflowEl = barra.createEl("button", { cls: "base-tabs-aba base-tabs-overflow" });
-		overflowEl.type = "button";
-		overflowEl.setAttribute("aria-label", "Mais visualizações");
-		overflowEl.style.display = "none";
-		setIcon(overflowEl, "more-horizontal");
-
-		// botão "+" só na base aberta como arquivo (não em embeds nativos nem curados).
-		if (!curado && !this.ehEmbed()) {
-			const addEl = barra.createEl("button", { cls: "base-tabs-aba base-tabs-add" });
-			addEl.type = "button";
-			addEl.setAttribute("aria-label", "Adicionar visualização");
-			setIcon(addEl, "plus");
-			addEl.addEventListener("click", () => void adicionarView(this.basesViewEl));
-		}
+		views.forEach((view) => barra.appendChild(this.criarAba(view, nomeAtiva, caminho)));
 
 		toolbar.prepend(barra);
 		this.barraEl = barra;
-
-		// mede o overflow agora e a cada mudança de largura da barra.
-		this.trilhaEl = trilha;
-		this.overflowEl = overflowEl;
-		this.viewsRender = views;
-		this.nomeAtivaRender = nomeAtiva;
-		this.caminhoRender = caminho;
-		// mede no próximo frame (garante que o layout já assentou; medir agora daria clientWidth=0).
-		requestAnimationFrame(() => this.reavaliarOverflow());
-		this.observarLargura(barra);
 	}
 
 	/** Cria uma aba (ícone/nome conforme o modo + cliques + menu de contexto). */
@@ -200,122 +160,15 @@ export class BarraDeAbas {
 		menu.showAtMouseEvent(ev);
 	}
 
-	/** True se a base está num embed (nativo `![[...]]` ou curado), não aberta como arquivo. */
-	private ehEmbed(): boolean {
-		return !!this.basesViewEl.closest(".internal-embed, .base-tabs-embed-curado, .markdown-preview-view, .markdown-rendered");
-	}
-
-	/** Reobserva a largura da barra para reavaliar o overflow quando o painel é redimensionado. */
-	private observarLargura(barra: HTMLElement): void {
-		this.resizeObserver?.disconnect();
-		this.resizeObserver = new ResizeObserver(() => this.reavaliarOverflow());
-		this.resizeObserver.observe(barra);
-	}
-
-	/**
-	 * Mede quais abas cabem na largura disponível. As que não couberem são escondidas e vão para o
-	 * menu "…" (que aparece antes do "+"). Se tudo couber, o "…" some.
-	 */
-	private reavaliarOverflow(): void {
-		if (this.avaliandoOverflow) return; // evita loop com o ResizeObserver.
-		const trilha = this.trilhaEl;
-		const overflow = this.overflowEl;
-		const barra = this.barraEl;
-		if (!trilha || !overflow || !barra) return;
-
-		const abas = Array.from(trilha.children) as HTMLElement[];
-		if (abas.length === 0) return;
-
-		this.avaliandoOverflow = true;
-		try {
-			this.medirEDistribuir(abas, trilha, overflow, barra);
-		} finally {
-			// solta o guard no próximo frame (depois que o layout assentou).
-			requestAnimationFrame(() => (this.avaliandoOverflow = false));
-		}
-	}
-
-	private medirEDistribuir(
-		abas: HTMLElement[],
-		trilha: HTMLElement,
-		overflow: HTMLElement,
-		_barra: HTMLElement
-	): void {
-		// mostra todas para medir do zero.
-		abas.forEach((a) => (a.style.display = ""));
-		overflow.style.display = "none";
-
-		// A trilha tem overflow:hidden e flex:1. Se o conteúdo (scrollWidth) couber na largura
-		// visível (clientWidth), NÃO há overflow — nada a esconder. Comparação direta e confiável,
-		// sem depender de somar larguras de irmãos.
-		const clientW = trilha.clientWidth;
-		if (clientW === 0) return; // layout ainda não assentou; um próximo ciclo remede.
-		const folga = 2; // tolerância de arredondamento.
-		if (trilha.scrollWidth <= clientW + folga) {
-			overflow.style.display = "none";
-			return;
-		}
-
-		// Há overflow: reserva espaço para o "…" e esconde abas do fim até o conteúdo caber.
-		const larguraOverflow = this.larguraDe(overflow);
-		const escondidas: number[] = [];
-		for (let i = abas.length - 1; i >= 1; i--) {
-			// enquanto o conteúdo (menos as já escondidas) não couber com o "…" reservado, esconde mais.
-			if (trilha.scrollWidth <= clientW - larguraOverflow + folga) break;
-			abas[i].style.display = "none";
-			escondidas.unshift(i);
-		}
-
-		if (escondidas.length === 0) {
-			overflow.style.display = "none";
-			return;
-		}
-
-		// configura o "…" para abrir um menu com as views escondidas.
-		overflow.style.display = "";
-		overflow.onclick = (ev) => {
-			const menu = new Menu();
-			for (const i of escondidas) {
-				const view = this.viewsRender[i];
-				if (!view) continue;
-				const icone =
-					iconeDaView(this.dados, this.caminhoRender, view.nome) ?? ICONE_POR_TIPO[view.tipo] ?? ICONE_FALLBACK;
-				menu.addItem((item) =>
-					item
-						.setTitle(view.nome)
-						.setIcon(icone)
-						.setChecked(view.nome === this.nomeAtivaRender)
-						.onClick(() => {
-							if (view.nome !== this.nomeAtivaRender) void trocarPara(this.basesViewEl, view.nome);
-						})
-				);
-			}
-			menu.showAtMouseEvent(ev);
-		};
-	}
-
-	/** Largura de um elemento + o gap aproximado (--size-4-1 = 4px). Mede mesmo se estiver oculto. */
-	private larguraDe(el: HTMLElement): number {
-		const estavaOculto = el.style.display === "none";
-		if (estavaOculto) el.style.display = "";
-		const w = el.getBoundingClientRect().width + 4;
-		if (estavaOculto) el.style.display = "none";
-		return w;
-	}
-
 	destruir(): void {
 		try {
-			this.resizeObserver?.disconnect();
-			this.resizeObserver = null;
 			this.barraEl?.remove();
 			const toolbar = encontrarToolbar(this.basesViewEl);
-			toolbar?.classList.remove("base-tabs-ativo");
+			toolbar?.classList.remove("base-tabs-ativo", "base-tabs-em-embed");
 		} catch {
 			/* nada a fazer */
 		}
 		this.barraEl = null;
-		this.trilhaEl = null;
-		this.overflowEl = null;
 		this.hashAtual = "";
 	}
 }

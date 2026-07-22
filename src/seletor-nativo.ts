@@ -133,24 +133,3 @@ export async function trocarPara(basesViewEl: HTMLElement, nome: string): Promis
 	}
 }
 
-/** Aciona o botão nativo de adicionar visualização. */
-export async function adicionarView(basesViewEl: HTMLElement): Promise<boolean> {
-	const toolbar = encontrarToolbar(basesViewEl);
-	if (!toolbar) return false;
-	const seletor = encontrarSeletor(toolbar);
-	if (!seletor) return false;
-	try {
-		const menu = await abrirMenuDeViews(seletor);
-		if (!menu) return false;
-		const itens = Array.from(menu.querySelectorAll<HTMLElement>(SELETOR_ITEM));
-		const add = itens.find((i) => /adicionar|add view|nova visualiza|new view/i.test(nomeDoItem(i)));
-		if (add) {
-			(add.querySelector<HTMLElement>(".bases-toolbar-menu-item-info") ?? add).click();
-			return true;
-		}
-		fecharMenu(menu);
-	} catch (e) {
-		log("erro ao adicionar view", e);
-	}
-	return false;
-}

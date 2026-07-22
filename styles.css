@@ -2,26 +2,20 @@
    Usa variáveis do tema do Obsidian para respeitar o tema ativo (Minimal, etc.). */
 
 /* Barra de abas injetada no início da toolbar da Base.
-   Ocupa o espaço restante da toolbar (flex:1, min-width:0); as abas que não couberem vão
-   para o menu "…" (overflow), calculado em JS comparando scrollWidth vs clientWidth da trilha. */
+   Linha única; se as abas não couberem, transbordam com rolagem lateral discreta (sem medição
+   em JS — medir em bases grandes travava o app). */
 .base-tabs-barra {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1, 4px);
 	flex-wrap: nowrap;
-	flex: 1 1 auto;
 	min-width: 0;
-	overflow: hidden;
+	max-width: 100%;
+	overflow-x: auto;
+	scrollbar-width: none; /* Firefox: sem barra de rolagem visível */
 }
-/* trilha das abas visíveis: ocupa o espaço e esconde o que passar. */
-.base-tabs-trilha {
-	display: flex;
-	align-items: center;
-	gap: var(--size-4-1, 4px);
-	flex-wrap: nowrap;
-	flex: 1 1 auto;
-	min-width: 0;
-	overflow: hidden;
+.base-tabs-barra::-webkit-scrollbar {
+	display: none; /* Chromium: idem */
 }
 .base-tabs-aba {
 	flex: 0 0 auto; /* abas não encolhem nem quebram */
@@ -71,17 +65,6 @@
 .base-tabs-aba-nome {
 	overflow: hidden;
 	text-overflow: ellipsis;
-}
-
-/* Aba "+" de adicionar visualização: só o ícone. */
-.base-tabs-aba.base-tabs-add .base-tabs-aba-nome {
-	display: none;
-}
-.base-tabs-aba.base-tabs-add {
-	color: var(--text-faint);
-}
-.base-tabs-aba.base-tabs-add:hover {
-	color: var(--text-normal);
 }
 
 /* Quando as abas estão ativas, esconde o seletor (dropdown) de views nativo.
@@ -146,33 +129,57 @@
 	color: var(--text-normal);
 }
 
+/* Tutorial do embed na tela de configurações. */
+.base-tabs-tutorial-code {
+	background: var(--background-secondary);
+	border-radius: var(--radius-s, 6px);
+	padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+	overflow-x: auto;
+	margin: var(--size-4-2, 8px) 0;
+}
+.base-tabs-tutorial-code code {
+	white-space: pre;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+}
+.base-tabs-tutorial-copy {
+	margin-bottom: var(--size-4-3, 12px);
+}
+.base-tabs-tutorial-dicas {
+	margin: var(--size-4-2, 8px) 0 var(--size-4-4, 16px);
+	padding-left: var(--size-4-4, 16px);
+}
+.base-tabs-tutorial-dicas li {
+	margin-bottom: var(--size-4-1, 4px);
+}
+
 /* Fase 2: embed curado (bloco ```base-tabs numa nota). */
 .base-tabs-embed-curado {
 	width: 100%;
 }
 
-/* Num embed curado, a toolbar serve só pra visualizar: escondemos os botões de configuração
-   (ordenar, filtro, propriedades, contador, novo). A configuração fica na base original.
-   Mantemos só o "Localizar" (busca dentro da base naquela página) + as nossas abas. */
-.base-tabs-embed-curado .bases-toolbar-sort-menu,
-.base-tabs-embed-curado .bases-toolbar-filter-menu,
-.base-tabs-embed-curado .bases-toolbar-properties-menu,
-.base-tabs-embed-curado .bases-toolbar-results-menu,
-.base-tabs-embed-curado .bases-toolbar-new-item-menu {
+/* Em QUALQUER embed (nativo ![[...]] ou curado), a toolbar serve só pra visualizar: escondemos os
+   botões de configuração (ordenar, filtro, propriedades, contador, novo). A config fica na base
+   original. Mantemos só o "Localizar" (busca dentro da base) + as nossas abas.
+   O alvo é a toolbar marcada com .base-tabs-em-embed (embeds nativos) ou dentro de .base-tabs-embed-curado. */
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-sort-menu,
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-filter-menu,
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-properties-menu,
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-results-menu,
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-new-item-menu {
 	display: none;
 }
 
-/* "Localizar" vai pra extremidade direita e mostra só o ícone (sem a palavra).
-   Escondemos qualquer label de texto do botão (independente da classe exata) e garantimos
-   que o ícone continue visível. */
-.base-tabs-embed-curado .bases-toolbar-search {
+/* "Localizar" vai pra extremidade direita e mostra só o ícone (sem a palavra). */
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-search {
 	margin-left: auto;
 }
-.base-tabs-embed-curado .bases-toolbar-search .text-button-label,
-.base-tabs-embed-curado .bases-toolbar-search .text-icon-button > span:not(.text-button-icon) {
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-search .text-button-label,
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-search .text-icon-button > span:not(.text-button-icon) {
 	display: none;
 }
-.base-tabs-embed-curado .bases-toolbar-search .text-button-icon {
+.bases-toolbar.base-tabs-em-embed .bases-toolbar-search .text-button-icon {
 	display: inline-flex;
 }
 .base-tabs-erro {
