@@ -1,7 +1,7 @@
 {
 	"id": "base-tabs",
 	"name": "Base Tabs",
-	"version": "0.1.8",
+	"version": "0.1.9",
 	"minAppVersion": "1.10.0",
 	"description": "Mostra as views de uma Base como abas horizontais com ícones (estilo Notion), no lugar do menu suspenso.",
 	"author": "ferdicez",

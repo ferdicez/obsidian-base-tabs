@@ -13,6 +13,11 @@
 	max-width: 100%;
 	overflow-x: auto;
 	scrollbar-width: none; /* Firefox: sem barra de rolagem visível */
+	/* Fundo clarinho só atrás das abas (cor do hover do tema), pra suavizar o cinza
+	   da toolbar nativa sem mexer no resto dela. Cantos arredondados + respiro. */
+	background: var(--background-modifier-hover);
+	padding: var(--size-4-1, 4px);
+	border-radius: var(--radius-m, 8px);
 }
 .base-tabs-barra::-webkit-scrollbar {
 	display: none; /* Chromium: idem */
