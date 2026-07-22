@@ -95,6 +95,9 @@ export class PainelConfigBaseTabs extends PluginSettingTab {
 			text: "A ordem das views no bloco é a ordem em que as abas aparecem.",
 		});
 		dicas.createEl("li", {
+			text: "Para esconder a barra de abas (mostrar só o conteúdo da base, ex.: quando há uma view só), adicione a linha: abas: não",
+		});
+		dicas.createEl("li", {
 			text: "Dica: para embedar mostrando TODAS as views, basta usar o embed normal do Obsidian: ![[Nome Da Base.base]].",
 		});
 	}

@@ -127,13 +127,7 @@ export class BarraDeAbas {
 		if (modo === "so-icone") aba.setAttribute("aria-label", view.nome);
 
 		aba.addEventListener("click", () => {
-			const ativaAgora = nomeViewAtiva(this.basesViewEl);
-			console.log("[base-tabs] clique na aba:", view.nome, "| view ativa:", ativaAgora);
-			if (view.nome !== ativaAgora) {
-				void trocarPara(this.basesViewEl, view.nome).then((ok) =>
-					console.log("[base-tabs] trocarPara resultado:", ok)
-				);
-			}
+			if (view.nome !== nomeViewAtiva(this.basesViewEl)) void trocarPara(this.basesViewEl, view.nome);
 		});
 		aba.addEventListener("contextmenu", (ev) => this.abrirMenuContexto(ev, view, caminho, modo));
 		return aba;

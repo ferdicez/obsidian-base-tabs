@@ -12,6 +12,8 @@ import { lerViewsDoArquivo, preencherCacheBase, resolverArquivoBase } from "../l
 interface ConfigBloco {
 	base: string | null;
 	views: string[];
+	/** se false, não mostra a barra de abas (só o conteúdo da base). Padrão: true. */
+	abas: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export class ProcessadorBaseTabs {
 			el,
 			caminhoBase,
 			cfg.views,
+			cfg.abas,
 			this.getDados,
 			this.escolherIcone,
 			this.definirModo,
@@ -71,6 +74,7 @@ class EmbedCurado extends MarkdownRenderChild {
 		containerEl: HTMLElement,
 		private caminhoBase: string,
 		private views: string[],
+		private mostrarAbas: boolean,
 		private getDados: () => DadosBaseTabs,
 		private escolherIcone: (caminhoBase: string | null, nomeView: string) => void,
 		private definirModo: (caminhoBase: string | null, nomeView: string, modo: ModoExibicao) => void,
@@ -110,6 +114,12 @@ class EmbedCurado extends MarkdownRenderChild {
 
 		// renderiza o embed nativo da base dentro do nosso container (this = Component owner).
 		await MarkdownRenderer.render(this.appRef, `![[${arquivo.path}]]`, container, this.sourcePath, this);
+
+		// `abas: não` → esconde a barra/toolbar inteira, mostrando só o conteúdo da base.
+		if (!this.mostrarAbas) {
+			container.classList.add("base-tabs-sem-barra");
+			return;
+		}
 
 		// observa a .bases-view surgir e (re)aplica a barra curada a cada mudança do DOM.
 		this.observer = new MutationObserver(() => this.aplicar(container));
@@ -156,7 +166,7 @@ class EmbedCurado extends MarkdownRenderChild {
 
 /** Parse simples de `chave: valor` por linha. `views` é uma lista separada por vírgula. */
 function parseConfig(source: string): ConfigBloco {
-	const cfg: ConfigBloco = { base: null, views: [] };
+	const cfg: ConfigBloco = { base: null, views: [], abas: true };
 	for (const linhaBruta of source.split("\n")) {
 		const linha = linhaBruta.trim();
 		if (!linha || linha.startsWith("#")) continue;
@@ -170,6 +180,9 @@ function parseConfig(source: string): ConfigBloco {
 				.split(",")
 				.map((v) => v.trim())
 				.filter((v) => v.length > 0);
+		} else if (chave === "abas") {
+			// abas: nao / não / false / 0 / off  → esconde a barra de abas.
+			cfg.abas = !/^(n[aã]o|nao|false|0|off|no)$/i.test(valor);
 		}
 	}
 	return cfg;

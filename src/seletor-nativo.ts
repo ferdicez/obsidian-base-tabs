@@ -156,36 +156,25 @@ export async function abrirConfigNativaDaView(basesViewEl: HTMLElement, nome: st
  */
 export async function trocarPara(basesViewEl: HTMLElement, nome: string): Promise<boolean> {
 	const toolbar = encontrarToolbar(basesViewEl);
-	if (!toolbar) {
-		console.log("[base-tabs] trocarPara: toolbar NÃO encontrada");
-		return false;
-	}
+	if (!toolbar) return false;
 	const seletor = encontrarSeletor(toolbar);
-	if (!seletor) {
-		console.log("[base-tabs] trocarPara: seletor NÃO encontrado. toolbar:", toolbar.outerHTML.slice(0, 800));
-		return false;
-	}
+	if (!seletor) return false;
 
 	try {
 		const menu = await abrirMenuDeViews(seletor);
-		if (!menu) {
-			console.log("[base-tabs] trocarPara: menu NÃO abriu");
-			return false;
-		}
+		if (!menu) return false;
 		const itens = Array.from(menu.querySelectorAll<HTMLElement>(SELETOR_ITEM));
-		console.log("[base-tabs] trocarPara: itens no menu:", itens.map((i) => nomeDoItem(i)));
 		const alvo = itens.find((item) => nomeDoItem(item) === nome);
 		if (alvo) {
+			// clica na área de informação do item (o nome), não na setinha ">" que abre submenu.
 			const alvoClicavel = alvo.querySelector<HTMLElement>(".bases-toolbar-menu-item-info") ?? alvo;
 			alvoClicavel.click();
-			console.log("[base-tabs] trocarPara: cliquei no item", nome);
 			return true;
 		}
-		console.log("[base-tabs] trocarPara: item", nome, "NÃO achado no menu");
 		fecharMenu(menu);
 		return false;
 	} catch (e) {
-		console.log("[base-tabs] trocarPara: erro", e);
+		log("erro ao trocar de view", e);
 		return false;
 	}
 }

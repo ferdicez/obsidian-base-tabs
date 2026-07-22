@@ -188,3 +188,9 @@
 	font-size: var(--font-ui-small);
 	padding: var(--size-4-2, 8px);
 }
+
+/* `abas: não` no bloco — esconde a toolbar/cabeçalho inteiro do embed, mostrando só o conteúdo. */
+.base-tabs-sem-barra .bases-toolbar,
+.base-tabs-sem-barra .bases-header {
+	display: none;
+}
