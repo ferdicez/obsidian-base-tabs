@@ -6,7 +6,7 @@ import {
 } from "obsidian";
 import { BarraDeAbas } from "../barra-de-abas";
 import type { DadosBaseTabs, ModoExibicao } from "../dados";
-import { preencherCacheBase } from "../leitor-base";
+import { lerViewsDoArquivo, preencherCacheBase, resolverArquivoBase } from "../leitor-base";
 
 /** Config parseada de um bloco ```base-tabs. */
 interface ConfigBloco {
@@ -64,6 +64,7 @@ class EmbedCurado extends MarkdownRenderChild {
 	private barra: BarraDeAbas | null = null;
 	private removerOuvinte: (() => void) | null = null;
 	private containerInterno: HTMLElement | null = null;
+	private caminhoResolvido: string | null = null;
 
 	constructor(
 		private appRef: App,
@@ -83,11 +84,32 @@ class EmbedCurado extends MarkdownRenderChild {
 		const container = this.containerEl.createDiv({ cls: "base-tabs-embed-curado" });
 		this.containerInterno = container;
 
-		// pré-carrega as views do .base para a barra ter a lista assim que a .bases-view aparecer.
-		await preencherCacheBase(this.appRef, this.caminhoBase);
+		// 1) a base existe? (resolve como o ![[...]] faz — acha pelo nome mesmo sem a pasta).
+		const arquivo = resolverArquivoBase(this.appRef, this.caminhoBase, this.sourcePath);
+		if (!arquivo) {
+			this.erro(container, `Base não encontrada: "${this.caminhoBase}". Confira o nome do arquivo .base (pode incluir a pasta, ex.: Pasta/Nome).`);
+			return;
+		}
+
+		// 2) carrega as views do arquivo e valida os nomes pedidos ANTES de renderizar.
+		await preencherCacheBase(this.appRef, arquivo.path);
+		this.caminhoResolvido = arquivo.path;
+		const todas = lerViewsDoArquivo(this.appRef, arquivo.path);
+		const nomesExistentes = new Set(todas.map((v) => v.nome));
+		const pedidasValidas = this.views.filter((v) => nomesExistentes.has(v));
+
+		if (this.views.length > 0 && pedidasValidas.length === 0) {
+			const nomes = todas.map((v) => `"${v.nome}"`).join(", ") || "(nenhuma)";
+			this.erro(
+				container,
+				`Nenhuma das views informadas existe nessa base. Você pediu: ${this.views.map((v) => `"${v}"`).join(", ")}. ` +
+					`As views dessa base são: ${nomes}. Os nomes precisam ser iguais (maiúsculas e acentos contam).`
+			);
+			return;
+		}
 
 		// renderiza o embed nativo da base dentro do nosso container (this = Component owner).
-		await MarkdownRenderer.render(this.appRef, `![[${this.caminhoBase}]]`, container, this.sourcePath, this);
+		await MarkdownRenderer.render(this.appRef, `![[${arquivo.path}]]`, container, this.sourcePath, this);
 
 		// observa a .bases-view surgir e (re)aplica a barra curada a cada mudança do DOM.
 		this.observer = new MutationObserver(() => this.aplicar(container));
@@ -103,15 +125,22 @@ class EmbedCurado extends MarkdownRenderChild {
 	private aplicar(container: HTMLElement): void {
 		const baseEl = container.querySelector<HTMLElement>(".bases-view");
 		if (!baseEl) return;
+		const caminho = this.caminhoResolvido ?? this.caminhoBase;
 		if (!this.barra) {
 			this.barra = new BarraDeAbas(this.appRef, baseEl, this.getDados(), {
-				caminhoBase: () => this.caminhoBase,
+				caminhoBase: () => caminho,
 				escolherIcone: this.escolherIcone,
 				definirModo: this.definirModo,
 				filtrarViews: () => this.views,
 			});
 		}
 		this.barra.atualizar(this.getDados());
+	}
+
+	/** Mostra uma mensagem de erro amigável no lugar do embed. */
+	private erro(container: HTMLElement, texto: string): void {
+		container.empty();
+		container.createEl("div", { cls: "base-tabs-erro", text: `base-tabs — ${texto}` });
 	}
 
 	onunload(): void {

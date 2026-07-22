@@ -1,9 +1,32 @@
-import { parseYaml, type App, type TFile } from "obsidian";
+import { parseYaml, TFile, type App } from "obsidian";
 
 /** Uma view declarada no arquivo .base. */
 export interface ViewDoArquivo {
 	nome: string;
 	tipo: string;
+}
+
+/**
+ * Resolve o texto do `base:` (ex.: "workspaces", "workspaces.base", "Pasta/workspaces") para o
+ * arquivo .base real, do mesmo jeito que o Obsidian resolve `![[...]]` — acha pelo nome mesmo sem a
+ * pasta. `sourcePath` é a nota onde o bloco está (para links relativos). Retorna null se não achar.
+ */
+export function resolverArquivoBase(app: App, entrada: string, sourcePath = ""): TFile | null {
+	const limpo = entrada.trim().replace(/^\[\[|\]\]$/g, "");
+	const comExt = limpo.endsWith(".base") ? limpo : `${limpo}.base`;
+
+	// 1) caminho exato (funciona quando a usuária deu o caminho completo).
+	const exato = app.vault.getAbstractFileByPath(comExt);
+	if (exato instanceof TFile) return exato;
+
+	// 2) resolução por link (acha pelo nome do arquivo, como o ![[...]] faz).
+	const porLink = app.metadataCache.getFirstLinkpathDest(comExt, sourcePath);
+	if (porLink instanceof TFile) return porLink;
+	// tenta também sem a extensão (o resolvedor às vezes prefere assim).
+	const porLinkSemExt = app.metadataCache.getFirstLinkpathDest(limpo, sourcePath);
+	if (porLinkSemExt instanceof TFile && porLinkSemExt.extension === "base") return porLinkSemExt;
+
+	return null;
 }
 
 /**
@@ -16,13 +39,13 @@ export interface ViewDoArquivo {
  *
  * Retorna [] se não conseguir ler/parsear. Usa o cache do Obsidian (leitura síncrona) quando possível.
  */
-export function lerViewsDoArquivo(app: App, caminhoBase: string | null): ViewDoArquivo[] {
+export function lerViewsDoArquivo(app: App, caminhoBase: string | null, sourcePath = ""): ViewDoArquivo[] {
 	if (!caminhoBase) return [];
-	const file = app.vault.getAbstractFileByPath(caminhoBase) as TFile | null;
+	const file = resolverArquivoBase(app, caminhoBase, sourcePath);
 	if (!file) return [];
 
-	const conteudo = obterConteudoCache(app, file);
-	if (!conteudo) return [];
+	const conteudo = cacheConteudo.get(file.path);
+	if (!conteudo) return []; // cache ainda não preenchido; próximo ciclo resolve.
 
 	try {
 		const dados = parseYaml(conteudo) as { views?: Array<{ name?: string; type?: string }> } | null;
@@ -36,36 +59,26 @@ export function lerViewsDoArquivo(app: App, caminhoBase: string | null): ViewDoA
 	}
 }
 
-/**
- * Conteúdo do arquivo via cache do Obsidian (síncrono). `cachedRead` é assíncrono; para manter o
- * fluxo síncrono do render, usamos o texto que o Obsidian já tem em memória quando disponível.
- * Fallback: null (quem chama lida com lista vazia e re-tenta no próximo escaneamento).
- */
-function obterConteudoCache(app: App, file: TFile): string | null {
-	// A API pública não expõe leitura síncrona garantida; usamos um cache próprio preenchido
-	// de forma assíncrona por lerViewsDoArquivoAsync. Aqui devolvemos o que estiver em cache.
-	return cacheConteudo.get(file.path) ?? null;
-}
-
 const cacheConteudo = new Map<string, string>();
 
 /**
- * Versão assíncrona: lê o arquivo de fato e popula o cache, para as próximas leituras síncronas.
- * Chamar isto quando o caminho é conhecido; o render usa o cache já preenchido.
+ * Lê o arquivo .base de fato e popula o cache, para as próximas leituras síncronas.
+ * Resolve a entrada (nome/caminho) para o arquivo real como o ![[...]] faz. Retorna true se conseguiu.
  */
-export async function preencherCacheBase(app: App, caminhoBase: string | null): Promise<void> {
-	if (!caminhoBase) return;
-	const file = app.vault.getAbstractFileByPath(caminhoBase) as TFile | null;
-	if (!file) return;
+export async function preencherCacheBase(app: App, caminhoBase: string | null, sourcePath = ""): Promise<boolean> {
+	if (!caminhoBase) return false;
+	const file = resolverArquivoBase(app, caminhoBase, sourcePath);
+	if (!file) return false;
 	try {
 		const texto = await app.vault.cachedRead(file);
 		cacheConteudo.set(file.path, texto);
+		return true;
 	} catch {
-		/* ignora */
+		return false;
 	}
 }
 
-/** Invalida o cache de um .base (ex.: ao editar as views). */
-export function invalidarCacheBase(caminhoBase: string): void {
-	cacheConteudo.delete(caminhoBase);
+/** Invalida o cache de um .base pelo caminho real do arquivo. */
+export function invalidarCacheBase(caminhoReal: string): void {
+	cacheConteudo.delete(caminhoReal);
 }
