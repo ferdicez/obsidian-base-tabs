@@ -1,6 +1,6 @@
 {
 	"name": "base-tabs",
-	"version": "0.1.6",
+	"version": "0.1.7",
 	"description": "Plugin Obsidian: mostra as views de uma Base como abas horizontais com ícones (estilo Notion), no lugar do menu suspenso",
 	"main": "main.js",
 	"scripts": {

@@ -73,6 +73,16 @@ function esperar(ms: number): Promise<void> {
  */
 async function abrirMenuDeViews(seletor: HTMLElement): Promise<HTMLElement | null> {
 	const opts = { bubbles: true, cancelable: true, view: window, button: 0 } as MouseEventInit;
+
+	// O seletor é escondido via CSS (classe .base-tabs-ativo na toolbar). Um elemento escondido/fora
+	// da tela pode não responder ao clique programático. Então, só durante o clique, forçamos ele a
+	// ficar acionável (via style inline, que vence o CSS). É imperceptível — dura milissegundos.
+	const estiloAnterior = seletor.getAttribute("style") ?? "";
+	seletor.style.pointerEvents = "auto";
+	seletor.style.position = "static";
+	seletor.style.width = "auto";
+	seletor.style.height = "auto";
+
 	// dispara a sequência completa de eventos de ponteiro + mouse.
 	seletor.dispatchEvent(new PointerEvent("pointerdown", opts));
 	seletor.dispatchEvent(new MouseEvent("mousedown", opts));
@@ -80,8 +90,11 @@ async function abrirMenuDeViews(seletor: HTMLElement): Promise<HTMLElement | nul
 	seletor.dispatchEvent(new MouseEvent("mouseup", opts));
 	seletor.dispatchEvent(new MouseEvent("click", opts));
 
+	// restaura o estilo (o CSS volta a esconder o seletor).
+	seletor.setAttribute("style", estiloAnterior);
+
 	// espera o menu de views surgir E ter itens (o Obsidian preenche de forma assíncrona).
-	for (let i = 0; i < 20; i++) {
+	for (let i = 0; i < 30; i++) {
 		const menu = document.querySelector<HTMLElement>(".menu.bases-toolbar-views-menu");
 		if (menu?.querySelector(SELETOR_ITEM)) return menu;
 		await esperar(20);
@@ -105,30 +118,74 @@ function nomeDoItem(item: HTMLElement): string {
 }
 
 /**
- * Troca a view ativa da Base: abre o menu de views nativo e clica no item de nome `nome`.
- * O menu do Obsidian aparece de forma assíncrona, então esperamos ele surgir antes de clicar.
+ * Abre o menu nativo de configuração de UMA view (renomear, duplicar, excluir, etc.).
+ * Isso devolve o acesso às ações nativas que o plugin escondeu ao ocultar o seletor. Funciona
+ * acionando a "setinha" (submenu) do item da view no menu nativo de views.
  */
-export async function trocarPara(basesViewEl: HTMLElement, nome: string): Promise<boolean> {
+export async function abrirConfigNativaDaView(basesViewEl: HTMLElement, nome: string): Promise<boolean> {
 	const toolbar = encontrarToolbar(basesViewEl);
 	if (!toolbar) return false;
 	const seletor = encontrarSeletor(toolbar);
 	if (!seletor) return false;
-
 	try {
 		const menu = await abrirMenuDeViews(seletor);
 		if (!menu) return false;
 		const itens = Array.from(menu.querySelectorAll<HTMLElement>(SELETOR_ITEM));
 		const alvo = itens.find((item) => nomeDoItem(item) === nome);
-		if (alvo) {
-			// clica na área de informação do item (o nome), não na setinha ">" que abre submenu.
-			const alvoClicavel = alvo.querySelector<HTMLElement>(".bases-toolbar-menu-item-info") ?? alvo;
-			alvoClicavel.click();
+		if (!alvo) {
+			fecharMenu(menu);
+			return false;
+		}
+		// a setinha ">" do item abre o submenu com as ações (renomear/duplicar/excluir).
+		const setinha = alvo.querySelector<HTMLElement>(".bases-toolbar-menu-item-icon");
+		if (setinha) {
+			setinha.click();
 			return true;
 		}
 		fecharMenu(menu);
 		return false;
 	} catch (e) {
-		log("erro ao trocar de view", e);
+		log("erro ao abrir config nativa da view", e);
+		return false;
+	}
+}
+
+/**
+ * Troca a view ativa da Base: abre o menu de views nativo e clica no item de nome `nome`.
+ * O menu do Obsidian aparece de forma assíncrona, então esperamos ele surgir antes de clicar.
+ */
+export async function trocarPara(basesViewEl: HTMLElement, nome: string): Promise<boolean> {
+	const toolbar = encontrarToolbar(basesViewEl);
+	if (!toolbar) {
+		console.log("[base-tabs] trocarPara: toolbar NÃO encontrada");
+		return false;
+	}
+	const seletor = encontrarSeletor(toolbar);
+	if (!seletor) {
+		console.log("[base-tabs] trocarPara: seletor NÃO encontrado. toolbar:", toolbar.outerHTML.slice(0, 800));
+		return false;
+	}
+
+	try {
+		const menu = await abrirMenuDeViews(seletor);
+		if (!menu) {
+			console.log("[base-tabs] trocarPara: menu NÃO abriu");
+			return false;
+		}
+		const itens = Array.from(menu.querySelectorAll<HTMLElement>(SELETOR_ITEM));
+		console.log("[base-tabs] trocarPara: itens no menu:", itens.map((i) => nomeDoItem(i)));
+		const alvo = itens.find((item) => nomeDoItem(item) === nome);
+		if (alvo) {
+			const alvoClicavel = alvo.querySelector<HTMLElement>(".bases-toolbar-menu-item-info") ?? alvo;
+			alvoClicavel.click();
+			console.log("[base-tabs] trocarPara: cliquei no item", nome);
+			return true;
+		}
+		console.log("[base-tabs] trocarPara: item", nome, "NÃO achado no menu");
+		fecharMenu(menu);
+		return false;
+	} catch (e) {
+		console.log("[base-tabs] trocarPara: erro", e);
 		return false;
 	}
 }

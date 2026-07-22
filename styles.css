@@ -72,11 +72,12 @@
    ao trocar de view. Tiramos ele do fluxo visual mantendo-o "clicável" fora da tela. */
 .bases-toolbar.base-tabs-ativo > .bases-toolbar-views-menu {
 	position: absolute;
-	width: 0;
-	height: 0;
+	left: -9999px;
+	width: 1px;
+	height: 1px;
 	overflow: hidden;
 	opacity: 0;
-	pointer-events: none;
+	/* SEM pointer-events:none — o seletor precisa continuar acionável por código (trocarPara). */
 }
 
 /* Seletor de ícone (modal). */

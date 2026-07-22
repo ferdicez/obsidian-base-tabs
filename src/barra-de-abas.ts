@@ -1,7 +1,7 @@
 import { Menu, setIcon } from "obsidian";
 import { iconeDaView, modoDaView, type DadosBaseTabs, type ModoExibicao } from "./dados";
 import { lerViewsDoArquivo, type ViewDoArquivo } from "./leitor-base";
-import { encontrarToolbar, nomeViewAtiva, trocarPara } from "./seletor-nativo";
+import { abrirConfigNativaDaView, encontrarToolbar, nomeViewAtiva, trocarPara } from "./seletor-nativo";
 import type { App } from "obsidian";
 
 /** Ícone Lucide padrão por tipo de view, quando a usuária não escolheu um. */
@@ -127,7 +127,13 @@ export class BarraDeAbas {
 		if (modo === "so-icone") aba.setAttribute("aria-label", view.nome);
 
 		aba.addEventListener("click", () => {
-			if (view.nome !== nomeAtiva) void trocarPara(this.basesViewEl, view.nome);
+			const ativaAgora = nomeViewAtiva(this.basesViewEl);
+			console.log("[base-tabs] clique na aba:", view.nome, "| view ativa:", ativaAgora);
+			if (view.nome !== ativaAgora) {
+				void trocarPara(this.basesViewEl, view.nome).then((ok) =>
+					console.log("[base-tabs] trocarPara resultado:", ok)
+				);
+			}
 		});
 		aba.addEventListener("contextmenu", (ev) => this.abrirMenuContexto(ev, view, caminho, modo));
 		return aba;
@@ -157,6 +163,24 @@ export class BarraDeAbas {
 					.onClick(() => this.callbacks.definirModo(caminho, view.nome, op.modo))
 			);
 		}
+		menu.addSeparator();
+		// devolve o acesso às ações nativas da view (renomear, duplicar, excluir, etc.), que ficam
+		// no menu do Obsidian escondido junto com o seletor.
+		menu.addItem((item) =>
+			item
+				.setTitle("Configurar view (menu do Obsidian)…")
+				.setIcon("settings-2")
+				.onClick(() => {
+					// troca para a view primeiro (o menu nativo age sobre a view atual), depois abre.
+					if (view.nome !== nomeViewAtiva(this.basesViewEl)) {
+						void trocarPara(this.basesViewEl, view.nome).then(() =>
+							abrirConfigNativaDaView(this.basesViewEl, view.nome)
+						);
+					} else {
+						void abrirConfigNativaDaView(this.basesViewEl, view.nome);
+					}
+				})
+		);
 		menu.showAtMouseEvent(ev);
 	}
 
